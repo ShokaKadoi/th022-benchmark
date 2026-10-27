@@ -1,0 +1,26 @@
+{
+  "protocol": "th022-bds-prefrontal-v0.1",
+  "expected_source_commit": "98931f03b602a7685d63f88a85b71dfd35872a11",
+  "source_commit_verified_by_tool": false,
+  "dataset_license_metadata": "CC0",
+  "participants": 123,
+  "eligible_metadata_only": 103,
+  "train": 83,
+  "holdout": 20,
+  "eeg_bytes_present": 0,
+  "status": "METADATA_ONLY_NOT_READY_FOR_COMPETITION",
+  "target": "Terminal b_exit mean_span; provisional BDS endpoint, not general WM capacity",
+  "source_commit_verified_by_git": "98931f03b602a7685d63f88a85b71dfd35872a11",
+  "excluded_subjects": 20,
+  "exclusion_reason_counts_nonexclusive": {
+    "bds_invalid: Require exactly one terminal b_exit row": 1,
+    "prefrontal_eeg_not_listed": 15,
+    "prefrontal_events_missing": 16,
+    "bds_missing": 5
+  },
+  "validation": {
+    "unit_tests_passed": 19,
+    "randomized_metric_comparisons_to_scipy": 100,
+    "real_eeg_model_run": false
+  }
+}

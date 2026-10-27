@@ -1,0 +1,24 @@
+test_constant_half_undefined (test_benchmark.BenchmarkTests.test_constant_half_undefined) ... ok
+test_constant_predictions_undefined (test_benchmark.BenchmarkTests.test_constant_predictions_undefined) ... ok
+test_duplicate_headers_rejected (test_benchmark.BenchmarkTests.test_duplicate_headers_rejected) ... ok
+test_duplicate_rejected (test_benchmark.BenchmarkTests.test_duplicate_rejected) ... ok
+test_duplicate_split_id_rejected (test_benchmark.BenchmarkTests.test_duplicate_split_id_rejected) ... ok
+test_incomplete_or_duplicate_exit_rejected (test_benchmark.BenchmarkTests.test_incomplete_or_duplicate_exit_rejected) ... ok
+test_large_finite_numbers (test_benchmark.BenchmarkTests.test_large_finite_numbers) ... ok
+test_missing_subject_rejected (test_benchmark.BenchmarkTests.test_missing_subject_rejected) ... ok
+test_nonfinite_rejected (test_benchmark.BenchmarkTests.test_nonfinite_rejected) ... ok
+test_order_independent (test_benchmark.BenchmarkTests.test_order_independent) ... ok
+test_perfect_tied_predictions (test_benchmark.BenchmarkTests.test_perfect_tied_predictions) ... ok
+test_prepare_excludes_missing_and_does_not_claim_eeg_download (test_benchmark.BenchmarkTests.test_prepare_excludes_missing_and_does_not_claim_eeg_download) ... ok
+test_reverse_predictions_preserve_sign (test_benchmark.BenchmarkTests.test_reverse_predictions_preserve_sign) ... ok
+test_small_sample_rejected (test_benchmark.BenchmarkTests.test_small_sample_rejected) ... ok
+test_split_is_reproducible_disjoint_and_order_independent (test_benchmark.BenchmarkTests.test_split_is_reproducible_disjoint_and_order_independent) ... ok
+test_terminal_span_not_column_average (test_benchmark.BenchmarkTests.test_terminal_span_not_column_average) ... ok
+test_tie_ranks (test_benchmark.BenchmarkTests.test_tie_ranks) ... ok
+test_train_subject_rejected (test_benchmark.BenchmarkTests.test_train_subject_rejected) ... ok
+test_trial_order_rejected (test_benchmark.BenchmarkTests.test_trial_order_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.013s
+
+OK
