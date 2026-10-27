@@ -69,7 +69,32 @@ def make_split(ids, seed="th022-v0.1", fraction=0.2):
     return {sid: ("holdout" if sid in test else "train") for sid in sorted(ids)}
 
 
-def prepare(root, output):
+def load_split(path):
+    manifest = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("protocol") != VERSION or manifest.get("source_snapshot") != SNAPSHOT:
+        raise ValueError("Split manifest protocol/source mismatch")
+    rows = manifest.get("subjects")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("Split manifest needs subjects")
+    splits = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Invalid split manifest row")
+        sid, split = row.get("participant_id"), row.get("split")
+        if not isinstance(sid, str) or not sid.startswith("sub-") or not sid[4:].isdigit():
+            raise ValueError("Invalid split manifest participant ID")
+        if sid in splits or split not in ("train", "holdout"):
+            raise ValueError("Duplicate ID or unknown split in manifest")
+        splits[sid] = split
+    if any(list(splits.values()).count(split) < 3 for split in ("train", "holdout")):
+        raise ValueError("Split manifest needs >=3 subjects in each split")
+    return splits
+
+
+def prepare(root, output, *, split_manifest=None, freeze_split=False):
+    if freeze_split == (split_manifest is not None):
+        raise ValueError("Choose exactly one: freeze_split for first preparation, or split_manifest for reruns")
+    frozen = load_split(split_manifest) if split_manifest is not None else None
     root, output = Path(root), Path(output)
     metadata = json.loads((root / "dataset_description.json").read_text())
     if metadata.get("DatasetDOI") != "doi:10.18112/openneuro.ds008037.v1.0.0":
@@ -101,11 +126,26 @@ def prepare(root, output):
         manifests.append({"participant_id": sid, "behavior_path": str(behavior.relative_to(root)),
                           "behavior_sha256": digest(behavior), "eeg_path": str(eeg.relative_to(root)),
                           "eeg_bytes_present": eeg.exists(), "events_sha256": digest(events)})
-    splits = make_split(list(labels))
+    if frozen is not None:
+        missing = sorted(set(frozen) - set(labels))
+        added = sorted(set(labels) - set(frozen))
+        if missing or added:
+            reasons = {r["participant_id"]: r["reasons"] for r in exclusions}
+            detail = {sid: reasons.get(sid, ["not_in_participants"]) for sid in missing}
+            raise ValueError("Frozen cohort mismatch: " + json.dumps(
+                {"missing_or_invalid": detail, "new_eligible": added}, sort_keys=True))
+        splits = {sid: frozen[sid] for sid in sorted(frozen)}
+    else:
+        splits = make_split(list(labels))
     # Never overwrite a previous preparation or mix versions in a directory.
     output.mkdir(parents=True, exist_ok=False)
     private = output / "organizer_only"
     private.mkdir()
+    saved_split = private / "split_manifest.json"
+    saved_split.write_text(json.dumps({
+        "protocol": VERSION, "source_snapshot": SNAPSHOT,
+        "subjects": [{"participant_id": sid, "split": splits[sid]} for sid in splits]
+    }, indent=2) + "\n", encoding="utf-8")
     write_table(output / "train_labels.csv", ["participant_id", "target"],
                 [{"participant_id": sid, "target": labels[sid]} for sid in splits if splits[sid] == "train"])
     write_table(output / "holdout_ids.csv", ["participant_id"],
@@ -113,6 +153,8 @@ def prepare(root, output):
     write_table(private / "labels.csv", ["participant_id", "target", "split"],
                 [{"participant_id": sid, "target": labels[sid], "split": splits[sid]} for sid in splits])
     report = {"protocol": VERSION, "expected_source_commit": SNAPSHOT,
+              "split_manifest_sha256": digest(saved_split),
+              "split_mode": "reuse" if frozen is not None else "freeze",
               "source_commit_verified_by_tool": False,
               "dataset_license_metadata": metadata.get("License"),
               "participants": len(ids), "eligible_metadata_only": len(labels),
@@ -198,12 +240,17 @@ def main():
     prep = sub.add_parser("prepare")
     prep.add_argument("--dataset", required=True)
     prep.add_argument("--output", required=True)
+    split_mode = prep.add_mutually_exclusive_group(required=True)
+    split_mode.add_argument("--freeze-split", action="store_true",
+                            help="Explicitly create the initial cohort and split manifest")
+    split_mode.add_argument("--split-manifest", help="Reuse a frozen cohort; reject missing or new subjects")
     evaluate = sub.add_parser("score")
     evaluate.add_argument("--labels", required=True)
     evaluate.add_argument("--submission", required=True)
     args = parser.parse_args()
     try:
-        result = prepare(args.dataset, args.output) if args.command == "prepare" else score(args.labels, args.submission)
+        result = prepare(args.dataset, args.output, split_manifest=args.split_manifest,
+                         freeze_split=args.freeze_split) if args.command == "prepare" else score(args.labels, args.submission)
         print(json.dumps(result, indent=2, allow_nan=False))
     except (OSError, ValueError, KeyError) as exc:
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
