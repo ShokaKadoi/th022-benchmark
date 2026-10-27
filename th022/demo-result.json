@@ -1,0 +1,12 @@
+{
+  "protocol": "th022-bds-prefrontal-v0.1",
+  "n_holdout": 8,
+  "prediction_spearman": 0.9523809523809523,
+  "split_half_pearson": 0.9962508069333131,
+  "status": "defined",
+  "labels_sha256": "5b629df7a5f7e386f2dd1603893d7edb0e95b21e41389209f0aeea027461e3b2",
+  "submission_sha256": "d158cc94374573ccb8bcd6b08c348cb44c34a5fd6965d8c1b51468070d820447",
+  "rankable": false,
+  "note": "Provisional diagnostics only. No combined score; halves require organizer code rerun.",
+  "data_kind": "SYNTHETIC_PIPELINE_TEST_NOT_SCIENTIFIC_EVIDENCE"
+}
