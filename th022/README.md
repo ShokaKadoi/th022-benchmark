@@ -35,21 +35,30 @@ python3 -m unittest discover -s . -v
 python3 demo.py
 ```
 
-以下は `th022` をリポジトリ内の `benchmarks/th022` に置いた場合の手順。Python 3.10以上。追加インストール不要。
+以下はこのリポジトリをcloneし、リポジトリのルートで実行する手順。Python 3.10以上。追加インストール不要。
 
 ```bash
-python3 -m unittest discover -s benchmarks/th022 -v
-python3 benchmarks/th022/demo.py
+python3 -m unittest discover -s th022 -v
+python3 th022/demo.py
 git clone --depth 1 --branch 1.0.0 https://github.com/OpenNeuroDatasets/ds008037.git /tmp/th022-ds008037
 git -C /tmp/th022-ds008037 rev-parse HEAD
-python3 benchmarks/th022/benchmark.py prepare --dataset /tmp/th022-ds008037 --output /tmp/th022-prepared
+python3 th022/benchmark.py prepare --dataset /tmp/th022-ds008037 --output /tmp/th022-prepared --freeze-split
 ```
+
+初回の `--freeze-split` は、その時点の適格者と割り当てを `organizer_only/split_manifest.json` に保存する。再実行時は必ずこのファイルを指定する。
+
+```bash
+python3 th022/benchmark.py prepare --dataset /tmp/th022-ds008037 --output /tmp/th022-rerun --split-manifest /tmp/th022-prepared/organizer_only/split_manifest.json
+```
+
+固定対象者の欠損・無効化、または新たな適格者の追加がある場合は、対象IDと理由を報告して出力前に停止する。分割を自動で再計算しない。初回に不完全なデータで固定しないよう、適格者数と除外理由を確認し、確定したmanifestを再実行者へ渡す。入力の内容・正解値の同一性まではこのmanifestでは検証しないため、audit.jsonの元データハッシュも照合する。
 
 出力先は未作成のディレクトリを指定する。再実行時は新しい出力先を使う。cloneには通信が必要だが、prepareとscoreはローカルのみ。prepareはDOIを照合するがGitのHEADまでは検証しないため、上記rev-parseの結果を固定SHAと比較する。元ファイルのSHA-256は監査記録に残す。
 
 - `train_labels.csv`: 学習用の被験者IDと正解。
 - `holdout_ids.csv`: 評価対象IDだけ。
 - `organizer_only/labels.csv`: 主催者用の全正解・分割。
+- `organizer_only/split_manifest.json`: 正解値を含まない固定対象者・分割。再実行に使用。
 - `organizer_only/audit.json`: 除外理由、元ファイルのハッシュ、EEG実体の有無。
 
 `organizer_only` は参加者配布物に含めない。ただし元データの正解は公開されており、この分割では秘匿テストを実現できない。
@@ -60,7 +69,7 @@ python3 benchmarks/th022/benchmark.py prepare --dataset /tmp/th022-ds008037 --ou
 
 **入力候補:** 前頭前野への単発TMS-EEGのみ。安静時EEG・WM課題EEG・行動データ・年齢等は予測器の入力に含めない。今回、EEG読み込み・アーチファクト除去・特徴抽出は実装していない。
 
-**分割:** IDと固定seed `th022-v0.1` のSHA-256順で約20%をholdoutにする。被験者は重複させない。これは単一holdoutでありleave-one-subject-out交差検証ではない。前処理の学習・モデル選択・符号選択はtrain内で完結させる。
+**分割:** IDと固定seed `th022-v0.1` のSHA-256順で約20%をholdoutにする。初回に対象者と割り当てを保存し、以後は保存済みの分割を使用する。被験者は重複させない。これは単一holdoutでありleave-one-subject-out交差検証ではない。前処理の学習・モデル選択・符号選択はtrain内で完結させる。
 
 **提出CSV:** 各holdout被験者につき1行、次の列を持つ。
 
@@ -71,7 +80,7 @@ participant_id,prediction,half_a,half_b
 `prediction` は学習データだけで方向を決めた予測値。`half_a/half_b` は同じ固定手法で、主催者が事前指定した互いに重ならないTMS試行集合から得た指標。試行の分け方・前処理・対象時間窓は専門家レビュー後に固定するため、この版は本番採点には使わない。
 
 ```bash
-python3 benchmarks/th022/benchmark.py score --labels /tmp/th022-prepared/organizer_only/labels.csv --submission submission.csv
+python3 th022/benchmark.py score --labels /tmp/th022-prepared/organizer_only/labels.csv --submission submission.csv
 ```
 
 予測Spearman相関と、被験者を観測単位とする半分A/BのPearson相関を別々に返す。後者は各被験者の中で二つのスカラー同士の相関を計算するものではない。重み付き総合点・合格閾値・順位は未定義で、出力は常に `rankable=false`。一定値のベクトルは相関未定義としてnullを返す。負の予測相関は符号を維持し、絶対値で評価しない。

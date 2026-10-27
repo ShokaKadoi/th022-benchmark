@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import benchmark as b
 
@@ -120,7 +121,7 @@ class BenchmarkTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             b.read_table(path, ["participant_id", "target"])
 
-    def test_prepare_excludes_missing_and_does_not_claim_eeg_download(self):
+    def dataset_fixture(self):
         dataset = self.root / "dataset"
         dataset.mkdir()
         (dataset / "dataset_description.json").write_text(json.dumps({
@@ -134,14 +135,97 @@ class BenchmarkTests(unittest.TestCase):
             (beh / f"{sid}_task-bds_beh.tsv").write_text("trial_index\ttrialcode\tmean_span\n3\tb_exit\t6\n")
             (eeg / f"{sid}_task-tmseeg_acq-prefrontal_eeg.set").symlink_to("missing-annex-object")
             (eeg / f"{sid}_task-tmseeg_acq-prefrontal_events.tsv").write_text("onset\n1\n")
+        return dataset
+
+    def test_prepare_excludes_missing_and_does_not_claim_eeg_download(self):
+        dataset = self.dataset_fixture()
         out = self.root / "output"
-        report = b.prepare(dataset, out)
+        report = b.prepare(dataset, out, freeze_split=True)
         self.assertEqual(report["eligible_metadata_only"], 7)
         self.assertEqual(report["eeg_bytes_present"], 0)
         self.assertTrue((out / "organizer_only" / "labels.csv").exists())
         self.assertFalse((out / "labels.csv").exists())
         with self.assertRaises(FileExistsError):
-            b.prepare(dataset, out)
+            b.prepare(dataset, out, freeze_split=True)
+
+    def frozen_fixture(self):
+        dataset = self.dataset_fixture()
+        first = self.root / "first"
+        b.prepare(dataset, first, freeze_split=True)
+        return dataset, first / "organizer_only" / "split_manifest.json"
+
+    def test_rerun_preserves_split_without_recomputing(self):
+        dataset, manifest = self.frozen_fixture()
+        participants = dataset / "participants.tsv"
+        lines = participants.read_text().splitlines()
+        participants.write_text(lines[0] + "\n" + "\n".join(reversed(lines[1:])) + "\n")
+        with patch.object(b, "make_split", side_effect=AssertionError("must not recalculate")):
+            report = b.prepare(dataset, self.root / "rerun", split_manifest=manifest)
+        self.assertEqual(report["split_mode"], "reuse")
+        self.assertEqual(report["split_manifest_sha256"], b.digest(manifest))
+        self.assertEqual((self.root / "first/organizer_only/labels.csv").read_bytes(),
+                         (self.root / "rerun/organizer_only/labels.csv").read_bytes())
+
+    def test_missing_train_or_holdout_subject_stops_before_output(self):
+        dataset, manifest = self.frozen_fixture()
+        frozen_bytes = manifest.read_bytes()
+        splits = b.load_split(manifest)
+        for split in ("train", "holdout"):
+            sid = next(s for s in splits if splits[s] == split)
+            path = dataset / sid / "beh" / f"{sid}_task-bds_beh.tsv"
+            original = path.read_bytes()
+            path.unlink()
+            out = self.root / split
+            with self.subTest(split=split), self.assertRaisesRegex(ValueError, sid):
+                b.prepare(dataset, out, split_manifest=manifest)
+            self.assertFalse(out.exists())
+            self.assertEqual(manifest.read_bytes(), frozen_bytes)
+            path.write_bytes(original)
+
+    def test_removed_participant_stops(self):
+        dataset, manifest = self.frozen_fixture()
+        sid = next(iter(b.load_split(manifest)))
+        participants = dataset / "participants.tsv"
+        participants.write_text(participants.read_text().replace(sid + "\n", ""))
+        with self.assertRaisesRegex(ValueError, "not_in_participants"):
+            b.prepare(dataset, self.root / "removed", split_manifest=manifest)
+
+    def test_invalid_behavior_stops(self):
+        dataset, manifest = self.frozen_fixture()
+        sid = next(iter(b.load_split(manifest)))
+        (dataset / sid / "beh" / f"{sid}_task-bds_beh.tsv").write_text(
+            "trial_index\ttrialcode\tmean_span\n3\tb_exit\tNaN\n")
+        with self.assertRaisesRegex(ValueError, "bds_invalid"):
+            b.prepare(dataset, self.root / "invalid", split_manifest=manifest)
+
+    def test_added_eligible_subject_stops(self):
+        import shutil
+        dataset, manifest = self.frozen_fixture()
+        shutil.copytree(dataset / "sub-000", dataset / "sub-007", symlinks=True)
+        for path in list((dataset / "sub-007").rglob("*")):
+            if path.name.startswith("sub-000"):
+                path.rename(path.with_name(path.name.replace("sub-000", "sub-007")))
+        with self.assertRaisesRegex(ValueError, "new_eligible.*sub-007"):
+            b.prepare(dataset, self.root / "added", split_manifest=manifest)
+
+    def test_split_mode_is_explicit_and_exclusive(self):
+        with self.assertRaisesRegex(ValueError, "Choose exactly one"):
+            b.prepare(self.root, self.root / "out")
+        with self.assertRaisesRegex(ValueError, "Choose exactly one"):
+            b.prepare(self.root, self.root / "out", freeze_split=True, split_manifest="missing.json")
+
+    def test_invalid_split_manifest_rejected(self):
+        dataset, manifest = self.frozen_fixture()
+        original = json.loads(manifest.read_text())
+        variants = [[], {**original, "protocol": "other"}, {**original, "source_snapshot": "other"},
+                    {**original, "subjects": original["subjects"] + [original["subjects"][0]]},
+                    {**original, "subjects": [{"participant_id": "sub-000", "split": "test"}]},
+                    {**original, "subjects": original["subjects"][:2]}]
+        for value in variants:
+            manifest.write_text(json.dumps(value))
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                b.prepare(dataset, self.root / "bad-manifest", split_manifest=manifest)
+        self.assertFalse((self.root / "bad-manifest").exists())
 
 
 if __name__ == "__main__":
